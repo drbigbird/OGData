@@ -1,6 +1,6 @@
 # Download O&G spot price data from EIA
 
-import sys, datetime, pandas
+import openpyxl, sys, datetime, requests, os, xlrd
 from datetime import datetime
 
 # Create lookup dictionary for converting commodity abbreviations
@@ -12,7 +12,8 @@ abbrDict = {'b': 'pet/hist_xls/RBRTE', 'w': 'pet/hist_xls/RWTC', \
 # Create set containing valid time frequency options
 freqOpt = {'d', 'w', 'm', 'a'}
 
-# Define final output xlsx file name
+# Define temp xls and final output xls names
+tempfn = 'tempPriceData.xls'
 exportfn = 'PriceData.xlsx'
 
 def setOptions(args):
@@ -59,16 +60,65 @@ def setOptions(args):
 
 	return comType, freq, startDate
 
+def createOutput(tempfn, startDate):
+	"""Selects relevant price data and creates final output file
+	with arguments:
+		tempfn - Filename of the temporary downloaded file
+		startDate - Start date for the price data"""
+
+	wb = xlrd.open_workbook(tempfn)
+	dm = wb.datemode
+	sheet = wb.sheet_by_index(1)
+	pdict = {}
+
+	for i in range(3,sheet.nrows):
+		
+		tt = xlrd.xldate_as_tuple(sheet.cell(i,0).value,dm)
+		dateData = datetime(tt[0],tt[1],tt[2])
+		priceData = sheet.cell(i,1).value
+
+		if dateData >= startDate:
+			pdict[dateData] = priceData
+
+	clabels = [sheet.cell(2,0).value, sheet.cell(2,1).value]
+
+	return pdict, clabels
+
+def exportData(exportfn, pdict, clabels):
+	
+	wb = openpyxl.Workbook()
+	sheet = wb.active
+	sheet.title = 'Historical prices'
+
+	# Create lists from the dictionary data
+	dates = list(pdict.keys())
+	prices = list(pdict.values())
+
+	# Write the column headers
+	sheet.cell(2,2,clabels[0])
+	sheet.cell(2,3,clabels[1])
+
+	# Populate price data
+	for i in range(0,len(pdict)):
+
+		sheet.cell(i+3,2,dates[i].date())
+		sheet.cell(i+3,3,prices[i])
+
+	wb.save(exportfn)
+
+
 # Get download options and construct URL string
 comType, freq, startDate = setOptions(sys.argv[1:])
 url = 'https://www.eia.gov/dnav/' + abbrDict[comType] + freq + '.xls'
 
-# Download data and filter for start date
-df = pandas.read_excel(url, sheet_name=1, header = 2)
-df = df[df.Date > startDate]
+# Download the data file from EIA
+res = requests.get(url)
+with open(tempfn, 'wb') as output:
+	output.write(res.content)
+output.close()
 
-# Export data to new .xlsx file
-writer = pandas.ExcelWriter(exportfn)
-df.to_excel(writer, 'Historical prices', startrow = 1, startcol = 1, \
-	index = False)
-writer.save()
+pdict, clabels = createOutput('temp.xls',datetime(1888,3,15))
+exportData(exportfn, pdict, clabels)
+
+# Remove temporary file
+os.remove(tempfn)

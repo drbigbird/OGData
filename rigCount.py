@@ -1,29 +1,49 @@
 # Download Baker Hughes rig count data
 
-import pandas, datetime
-from pyxlsb import open_workbook as open_xlsb
+import pandas, datetime, requests, win32com.client, os
 from datetime import datetime
 
-import pdb
+import pdb, time
+start = time.time()
+
 
 # Temp for development
-fn = 'BHI test pivot.xlsb'
 url = 'http://phx.corporate-ir.net/External.File?item=UGFyZW50SUQ9NjkxMDYzfENoaWxkSUQ9NDAxODE2fFR5cGU9MQ==&t=1'
+tmp = os.getcwd() + '\\temp.xlsb'
+fn = os.getcwd() + '\\BHGE rig data.xls'
 
-def convertToDF(fn):
-	"""Converts rig count *.xlsb file into Pandas 
-	dataframe using the following arguments:
-		fn - Name of the rig count data file"""
 
-print('Starting conversion...')
-df = []
-i = 1
-with open_xlsb(fn) as wb:
-	with wb.get_sheet('Master Data') as sheet:
-		for row in sheet.rows(sparse=True):
-			pdb.set_trace()
-			for item in row:
-				print(item.v)
-				df.append([item.v])
+def getRigFile():
+	"""Download rig count *.xlsb file and convert into *.xls
+	using Excel COM object"""
+	
+	res = requests.get(url)
+	with open(tmp, 'wb') as output:
+		output.write(res.content)
+	output.close()
 
-df = pandas.DataFrame(df[1:], columns=df[0])
+	# Save BHGE xlsb file as a xls file
+	excel = win32com.client.Dispatch('Excel.Application')
+	excel.DisplayAlerts = False
+	excel.Visible = False
+	doc = excel.Workbooks.Open(tmp)
+
+	doc.SaveAs(fn, FileFormat=1)
+	doc.Close()
+	excel.Quit()
+
+
+def cleanup():
+	"""Remove Excel files"""
+
+	os.remove(tmp)
+	os.remove(fn)
+
+
+getRigFile()
+df = pandas.read_excel(fn, sheet_name='Master Data')
+df.to_pickle('test_data.pickle')
+
+cleanup()
+
+print("Elapsed time: " + str(time.time()-start) + " sec")
